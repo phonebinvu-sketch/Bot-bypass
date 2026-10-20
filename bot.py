@@ -190,14 +190,14 @@ class MainCategoryView(discord.ui.View):
   async def vn_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
+    # Phản hồi ngay lập tức để tránh lỗi timeout của Discord
+    await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(
         title="🇻🇳 Nền tảng Việt Nam",
         description="Chọn dịch vụ rút gọn / traffic bên dưới:",
         color=discord.Color.green(),
     )
-    await interaction.response.edit_message(
-        embed=embed, view=SubPlatformView("vn")
-    )
+    await interaction.edit_original_response(embed=embed, view=SubPlatformView("vn"))
 
   @discord.ui.button(
       label="Nền tảng Quốc tế", style=discord.ButtonStyle.success, emoji="🌍"
@@ -205,13 +205,14 @@ class MainCategoryView(discord.ui.View):
   async def global_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
+    # Phản hồi ngay lập tức để tránh lỗi timeout của Discord
+    await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(
         title="🌍 Nền tảng Quốc tế",
         description="Chọn dịch vụ quốc tế bên dưới:",
         color=discord.Color.orange(),
     )
-    await interaction.response.edit_message(
-        embed=embed, view=SubPlatformView("global")
+    await interaction.edit_original_response(embed=embed, view=SubPlatformView("global"))
     )
 
 
