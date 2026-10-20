@@ -59,7 +59,6 @@ class BypassBot(commands.Bot):
   def __init__(self):
     intents = discord.Intents.default()
     super().__init__(command_prefix="!", intents=intents)
-    self.tree = app_commands.CommandTree(self)
 
   async def setup_hook(self) -> None:
     await self.tree.sync()
