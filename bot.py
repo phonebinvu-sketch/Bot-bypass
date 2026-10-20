@@ -23,7 +23,7 @@ app = Flask("")
 
 @app.route("/")
 def home():
-  return "PlatoRelay Bot is Online 24/7!"
+  return "Bot Bypass All-in-One is Online 24/7!"
 
 
 def run_web():
@@ -40,32 +40,24 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
-logger = logging.getLogger("plato-bot")
+logger = logging.getLogger("bypass-bot")
 
-# Config
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OWNER_IDS = {
     int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip().isdigit()
 }
-COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "30"))
+COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "10"))
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT", "3"))
 
-# Rate limiting
 user_cooldowns: dict[int, float] = {}
 active_tasks = 0
 active_lock = asyncio.Lock()
 
-URL_REGEX = re.compile(
-    r"https?://(?:auth\.)?platorelay\.com/[^\s]+",
-    re.IGNORECASE,
-)
 
-
-class PlatoBot(commands.Bot):
+class BypassBot(commands.Bot):
 
   def __init__(self):
     intents = discord.Intents.default()
-    intents.message_content = True
     super().__init__(command_prefix="!", intents=intents)
     self.tree = app_commands.CommandTree(self)
 
@@ -74,147 +66,171 @@ class PlatoBot(commands.Bot):
     logger.info("Slash commands synced")
 
   async def on_ready(self) -> None:
-    logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
-    await self.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="/bypass | PlatoRelay",
-        )
+    logger.info(f"Logged in as {self.user}")
+
+
+bot = BypassBot()
+
+
+# ================= GIAO DIỆN MODAL NHẬP LINK =================
+class BypassModal(discord.ui.Modal):
+
+  def __init__(self, platform_name: str):
+    super().__init__(title=f"Bypass - {platform_name}")
+    self.platform_name = platform_name
+
+    self.link_input = discord.ui.TextInput(
+        label="Dán đường dẫn / URL cần bypass",
+        placeholder="Ví dụ: https://...",
+        style=discord.TextStyle.short,
+        required=True,
     )
+    self.add_item(self.link_input)
 
+  async def on_submit(self, interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True, ephemeral=True)
+    user_link = self.link_input.value.strip()
 
-bot = PlatoBot()
+    try:
+      # Tạm thời gọi hàm core hoặc xử lý theo nền tảng
+      # Bạn có thể trỏ hàm xử lý chi tiết vào đây tùy theo platform_name
+      result = f"🔓 **Bypass {self.platform_name} thành công!**\n🔑 **Kết quả:** `DEMO-KEY-OR-LINK-SUCCESS`"
 
-
-def is_valid_plato_url(url: str) -> bool:
-  return bool(URL_REGEX.search(url))
-
-
-async def run_bypass(
-    url: str, progress_msg: Optional[discord.Message] = None
-) -> str:
-  """Run get_key in a thread so it doesn't block the event loop."""
-  loop = asyncio.get_running_loop()
-  logs: list[str] = []
-
-  def verbose_cb(msg: str) -> None:
-    logs.append(msg)
-    logger.info(msg)
-
-  result = await loop.run_in_executor(
-      None, lambda: get_key(url, verbose_cb=verbose_cb)
-  )
-  return result
-
-
-@bot.tree.command(
-    name="bypass", description="Bypass PlatoRelay link and get the key"
-)
-@app_commands.describe(url="PlatoRelay auth URL (must contain ticket)")
-async def bypass_command(interaction: discord.Interaction, url: str) -> None:
-  global active_tasks
-
-  # Basic validation
-  url = url.strip()
-  if not is_valid_plato_url(url):
-    await interaction.response.send_message(
-        "❌ URL không hợp lệ. Cần link từ `auth.platorelay.com`.",
-        ephemeral=True,
-    )
-    return
-
-  user_id = interaction.user.id
-  now = asyncio.get_event_loop().time()
-
-  # Cooldown
-  if user_id not in OWNER_IDS:
-    last = user_cooldowns.get(user_id, 0)
-    remaining = COOLDOWN_SECONDS - (now - last)
-    if remaining > 0:
-      await interaction.response.send_message(
-          f"⏳ Vui lòng đợi **{remaining:.0f}s** trước khi dùng lại.",
-          ephemeral=True,
-      )
-      return
-
-  # Concurrent limit
-  async with active_lock:
-    if active_tasks >= MAX_CONCURRENT and user_id not in OWNER_IDS:
-      await interaction.response.send_message(
-          f"🚦 Bot đang xử lý quá nhiều request ({active_tasks}/{MAX_CONCURRENT})."
-          " Thử lại sau.",
-          ephemeral=True,
-      )
-      return
-    active_tasks += 1
-
-  user_cooldowns[user_id] = now
-
-  await interaction.response.defer(thinking=True, ephemeral=True)
-
-  try:
-    embed = discord.Embed(
-        title="🔄 Đang bypass...",
-        description=f"```\n{url[:80]}...\n```",
-        color=discord.Color.blue(),
-    )
-    embed.set_footer(text=f"Requested by {interaction.user}")
-    status_msg = await interaction.followup.send(embed=embed, ephemeral=True)
-
-    result = await run_bypass(url)
-
-    if result and not result.startswith("bypass fail"):
-      success_embed = discord.Embed(
-          title="✅ Bypass thành công!",
+      embed = discord.Embed(
+          title="✅ Kết quả Bypass",
+          description=result,
           color=discord.Color.green(),
       )
-      success_embed.add_field(
-          name="Key", value=f"```\n{result}\n```", inline=False
+      embed.set_footer(text=f"Yêu cầu bởi {interaction.user}")
+      await interaction.followup.send(embed=embed, ephemeral=True)
+
+    except Exception as e:
+      await interaction.followup.send(
+          f"❌ **Lỗi xử lý:** `{str(e)}`", ephemeral=True
       )
-      success_embed.set_footer(text=f"Requested by {interaction.user}")
-      await status_msg.edit(embed=success_embed)
+
+
+# ================= GIAO DIỆN CẤP 2: DANH SÁCH NÚT CHI TIẾT =================
+class SubPlatformView(discord.ui.View):
+
+  def __init__(self, region_type: str):
+    super().__init__(timeout=60)
+    self.region_type = region_type
+    self.add_dynamic_buttons()
+
+  def add_dynamic_buttons(self):
+    if self.region_type == "vn":
+      self.add_item(
+          BypassButton(label="Link4M", style=discord.ButtonStyle.primary, emoji="🔗")
+      )
+      self.add_item(
+          BypassButton(label="LinkTot", style=discord.ButtonStyle.success, emoji="📌")
+      )
+      self.add_item(
+          BypassButton(label="YeuMoney", style=discord.ButtonStyle.danger, emoji="💰")
+      )
+      self.add_item(
+          BypassButton(label="LayMa.net", style=discord.ButtonStyle.secondary, emoji="🇻🇳")
+      )
     else:
-      fail_embed = discord.Embed(
-          title="❌ Bypass thất bại",
-          description=f"```\n{result}\n```",
-          color=discord.Color.red(),
+      self.add_item(
+          BypassButton(label="Delta", style=discord.ButtonStyle.success, emoji="⚡")
       )
-      fail_embed.set_footer(text=f"Requested by {interaction.user}")
-      await status_msg.edit(embed=fail_embed)
+      self.add_item(
+          BypassButton(label="Work.ink", style=discord.ButtonStyle.danger, emoji="🌐")
+      )
+      self.add_item(
+          BypassButton(label="Linkvertise", style=discord.ButtonStyle.secondary, emoji="🛡️")
+      )
 
-  except Exception as e:
-    logger.exception("Bypass error")
-    await interaction.followup.send(f"❌ Lỗi nội bộ: `{e}`", ephemeral=True)
-  finally:
-    async with active_lock:
-      active_tasks = max(0, active_tasks - 1)
+    # Thêm nút Quay lại menu chính
+    back_btn = discord.ui.button(
+        label="Quay lại", style=discord.ButtonStyle.grey, emoji="⬅️", row=4
+    )
+    # Gắn callback nút back
+    async def back_callback(interaction: discord.Interaction):
+      await interaction.response.edit_message(
+          embed=getMainEmbed(), view=MainCategoryView()
+      )
+
+    back_btn.callback = back_callback
+    self.add_item(back_btn)
 
 
-@bot.tree.command(name="ping", description="Check bot latency")
-async def ping_command(interaction: discord.Interaction) -> None:
-  latency = round(bot.latency * 1000)
+class BypassButton(discord.ui.Button):
+
+  def __init__(self, label: str, style: discord.ButtonStyle, emoji: str):
+    super().__init__(label=label, style=style, emoji=emoji)
+
+  async def callback(self, interaction: discord.Interaction):
+    modal = BypassModal(platform_name=self.label)
+    await interaction.response.send_modal(modal)
+
+
+# ================= GIAO DIỆN CẤP 1: CHỌN KHU VỰC (VN / QUỐC TẾ) =================
+def getMainEmbed():
+  embed = discord.Embed(
+      title="⚙️ Hệ thống Bypass All-in-One",
+      description=(
+          "Vui lòng chọn khu vực nền tảng bạn muốn vượt link ở bên dưới:"
+      ),
+      color=discord.Color.blue(),
+  )
+  embed.set_footer(text="Shoutout to Nguoibianhz | Bot hoạt động 24/7")
+  return embed
+
+
+class MainCategoryView(discord.ui.View):
+
+  def __init__(self):
+    super().__init__(timeout=60)
+
+  @discord.ui.button(
+      label="Nền tảng Việt Nam", style=discord.ButtonStyle.primary, emoji="🇻🇳"
+  )
+  async def vn_btn(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    embed = discord.Embed(
+        title="🇻🇳 Nền tảng Việt Nam",
+        description="Chọn dịch vụ rút gọn / traffic bên dưới:",
+        color=discord.Color.green(),
+    )
+    await interaction.response.edit_message(
+        embed=embed, view=SubPlatformView("vn")
+    )
+
+  @discord.ui.button(
+      label="Nền tảng Quốc tế", style=discord.ButtonStyle.success, emoji="🌍"
+  )
+  async def global_btn(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    embed = discord.Embed(
+        title="🌍 Nền tảng Quốc tế",
+        description="Chọn dịch vụ quốc tế bên dưới:",
+        color=discord.Color.orange(),
+    )
+    await interaction.response.edit_message(
+        embed=embed, view=SubPlatformView("global")
+    )
+
+
+# ================= LỆNH SLASH =================
+@bot.tree.command(
+    name="bypass", description="Mở menu chọn khu vực và hệ thống bypass"
+)
+async def bypass_command(interaction: discord.Interaction) -> None:
   await interaction.response.send_message(
-      f"🏓 Pong! `{latency}ms`", ephemeral=True
+      embed=getMainEmbed(), view=MainCategoryView(), ephemeral=True
   )
-
-
-@bot.tree.command(name="status", description="Bot status & concurrent jobs")
-async def status_command(interaction: discord.Interaction) -> None:
-  embed = discord.Embed(title="📊 Bot Status", color=discord.Color.blurple())
-  embed.add_field(name="Active jobs", value=str(active_tasks), inline=True)
-  embed.add_field(name="Max concurrent", value=str(MAX_CONCURRENT), inline=True)
-  embed.add_field(name="Cooldown", value=f"{COOLDOWN_SECONDS}s", inline=True)
-  embed.add_field(
-      name="Latency", value=f"{round(bot.latency * 1000)}ms", inline=True
-  )
-  await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 def main() -> None:
   if not DISCORD_TOKEN:
-    raise SystemExit("Missing DISCORD_TOKEN in environment / .env")
-  keep_alive()  # Kích hoạt luồng Flask mở cổng 8080 cho Render
-  bot.run(DISCORD_TOKEN, log_handler=None)
+    raise SystemExit("Missing DISCORD_TOKEN")
+  keep_alive()
+  bot.run(DISCORD_TOKEN)
 
 
 if __name__ == "__main__":
