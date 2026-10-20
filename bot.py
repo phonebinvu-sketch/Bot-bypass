@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import re
-from typing import Optional
 import threading
 from flask import Flask
 
@@ -43,15 +41,6 @@ logging.basicConfig(
 logger = logging.getLogger("bypass-bot")
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-OWNER_IDS = {
-    int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip().isdigit()
-}
-COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "10"))
-MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT", "3"))
-
-user_cooldowns: dict[int, float] = {}
-active_tasks = 0
-active_lock = asyncio.Lock()
 
 
 class BypassBot(commands.Bot):
@@ -91,17 +80,30 @@ class BypassModal(discord.ui.Modal):
     user_link = self.link_input.value.strip()
 
     try:
-      # Tạm thời gọi hàm core hoặc xử lý theo nền tảng
-      # Bạn có thể trỏ hàm xử lý chi tiết vào đây tùy theo platform_name
-      result = f"🔓 **Bypass {self.platform_name} thành công!**\n🔑 **Kết quả:** `DEMO-KEY-OR-LINK-SUCCESS`"
+      loop = asyncio.get_running_loop()
+      result = await loop.run_in_executor(None, lambda: get_key(user_link))
 
-      embed = discord.Embed(
-          title="✅ Kết quả Bypass",
-          description=result,
-          color=discord.Color.green(),
-      )
-      embed.set_footer(text=f"Yêu cầu bởi {interaction.user}")
-      await interaction.followup.send(embed=embed, ephemeral=True)
+      if result and not str(result).startswith("bypass fail"):
+        success_embed = discord.Embed(
+            title=f"✅ Bypass {self.platform_name} thành công!",
+            color=discord.Color.green(),
+        )
+        success_embed.add_field(
+            name="Kết quả (Key/Link)", value=f"```\n{result}\n```", inline=False
+        )
+        success_embed.add_field(
+            name="Link gốc", value=f"`{user_link}`", inline=False
+        )
+        success_embed.set_footer(text=f"Yêu cầu bởi {interaction.user}")
+        await interaction.followup.send(embed=success_embed, ephemeral=True)
+      else:
+        fail_embed = discord.Embed(
+            title="❌ Bypass thất bại",
+            description=f"```\n{result}\n```",
+            color=discord.Color.red(),
+        )
+        fail_embed.set_footer(text=f"Yêu cầu bởi {interaction.user}")
+        await interaction.followup.send(embed=fail_embed, ephemeral=True)
 
     except Exception as e:
       await interaction.followup.send(
@@ -120,36 +122,60 @@ class SubPlatformView(discord.ui.View):
   def add_dynamic_buttons(self):
     if self.region_type == "vn":
       self.add_item(
-          BypassButton(label="Link4M", style=discord.ButtonStyle.primary, emoji="🔗")
+          BypassButton(
+              label="Link4M", style=discord.ButtonStyle.primary, emoji="🔗"
+          )
       )
       self.add_item(
-          BypassButton(label="LinkTot", style=discord.ButtonStyle.success, emoji="📌")
+          BypassButton(
+              label="LinkTot", style=discord.ButtonStyle.success, emoji="📌"
+          )
       )
       self.add_item(
-          BypassButton(label="YeuMoney", style=discord.ButtonStyle.danger, emoji="💰")
+          BypassButton(
+              label="YeuMoney", style=discord.ButtonStyle.danger, emoji="💰"
+          )
       )
       self.add_item(
-          BypassButton(label="LayMa.net", style=discord.ButtonStyle.secondary, emoji="🇻🇳")
+          BypassButton(
+              label="LayMa.net", style=discord.ButtonStyle.secondary, emoji="🇻🇳"
+          )
       )
     else:
       self.add_item(
-          BypassButton(label="Delta", style=discord.ButtonStyle.success, emoji="⚡")
+          BypassButton(
+              label="Delta", style=discord.ButtonStyle.success, emoji="⚡"
+          )
       )
       self.add_item(
-          BypassButton(label="Work.ink", style=discord.ButtonStyle.danger, emoji="🌐")
+          BypassButton(
+              label="Work.ink", style=discord.ButtonStyle.danger, emoji="🌐"
+          )
       )
       self.add_item(
-          BypassButton(label="Linkvertise", style=discord.ButtonStyle.secondary, emoji="🛡️")
+          BypassButton(
+              label="Linkvertise",
+              style=discord.ButtonStyle.secondary,
+              emoji="🛡️",
+          )
       )
 
-    # Thêm nút Quay lại menu chính
-    back_btn = discord.ui.button(
+    back_btn = discord.ui.Button(
         label="Quay lại", style=discord.ButtonStyle.grey, emoji="⬅️", row=4
     )
-    # Gắn callback nút back
+
     async def back_callback(interaction: discord.Interaction):
-      await interaction.response.edit_message(
-          embed=getMainEmbed(), view=MainCategoryView()
+      await interaction.response.defer(ephemeral=True)
+      embed = discord.Embed(
+          title="⚙️ Hệ thống Bypass Tự động",
+          description=(
+              "Vui lòng chọn khu vực nền tảng bạn muốn vượt link ở bên dưới:\n"
+              "Shoutout to Nguoilbianhz | Bot hoạt động 24/7"
+          ),
+          color=discord.Color.blue(),
+      )
+      await interaction.edit_original_response(
+          embed=embed, view=MainCategoryView()
       )
 
     back_btn.callback = back_callback
@@ -166,19 +192,7 @@ class BypassButton(discord.ui.Button):
     await interaction.response.send_modal(modal)
 
 
-# ================= GIAO DIỆN CẤP 1: CHỌN KHU VỰC (VN / QUỐC TẾ) =================
-def getMainEmbed():
-  embed = discord.Embed(
-      title="⚙️ Hệ thống Bypass All-in-One",
-      description=(
-          "Vui lòng chọn khu vực nền tảng bạn muốn vượt link ở bên dưới:"
-      ),
-      color=discord.Color.blue(),
-  )
-  embed.set_footer(text="Shoutout to Nguoibianhz | Bot hoạt động 24/7")
-  return embed
-
-
+# ================= GIAO DIỆN CẤP 1: CHỌN KHU VỰC =================
 class MainCategoryView(discord.ui.View):
 
   def __init__(self):
@@ -190,14 +204,15 @@ class MainCategoryView(discord.ui.View):
   async def vn_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    # Phản hồi ngay lập tức để tránh lỗi timeout của Discord
     await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(
         title="🇻🇳 Nền tảng Việt Nam",
         description="Chọn dịch vụ rút gọn / traffic bên dưới:",
         color=discord.Color.green(),
     )
-    await interaction.edit_original_response(embed=embed, view=SubPlatformView("vn"))
+    await interaction.edit_original_response(
+        embed=embed, view=SubPlatformView("vn")
+    )
 
   @discord.ui.button(
       label="Nền tảng Quốc tế", style=discord.ButtonStyle.success, emoji="🌍"
@@ -205,14 +220,14 @@ class MainCategoryView(discord.ui.View):
   async def global_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    # Phản hồi ngay lập tức để tránh lỗi timeout của Discord
     await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(
         title="🌍 Nền tảng Quốc tế",
         description="Chọn dịch vụ quốc tế bên dưới:",
         color=discord.Color.orange(),
     )
-    await interaction.edit_original_response(embed=embed, view=SubPlatformView("global"))
+    await interaction.edit_original_response(
+        embed=embed, view=SubPlatformView("global")
     )
 
 
@@ -221,8 +236,16 @@ class MainCategoryView(discord.ui.View):
     name="bypass", description="Mở menu chọn khu vực và hệ thống bypass"
 )
 async def bypass_command(interaction: discord.Interaction) -> None:
+  embed = discord.Embed(
+      title="⚙️ Hệ thống Bypass Tự động",
+      description=(
+          "Vui lòng chọn khu vực nền tảng bạn muốn vượt link ở bên dưới:\n"
+          "Shoutout to Nguoilbianhz | Bot hoạt động 24/7"
+      ),
+      color=discord.Color.blue(),
+  )
   await interaction.response.send_message(
-      embed=getMainEmbed(), view=MainCategoryView(), ephemeral=True
+      embed=embed, view=MainCategoryView(), ephemeral=True
   )
 
 
